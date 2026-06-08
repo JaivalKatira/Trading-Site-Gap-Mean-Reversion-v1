@@ -363,9 +363,25 @@ def compute_targets(entry: float, reference_price: float) -> tuple[float, float,
 
 
 def compute_position_size(entry: float, stop_loss: float, target1: float, max_risk: float) -> PositionSize:
+    # Guard against None, NaN, or non-positive inputs
+    _zero = PositionSize(0, 0, 0, 0, 0)
+    try:
+        entry     = float(entry)
+        stop_loss = float(stop_loss)
+        target1   = float(target1)
+        max_risk  = float(max_risk)
+    except (TypeError, ValueError):
+        return _zero
+
+    if math.isnan(entry) or math.isnan(stop_loss) or math.isnan(target1):
+        return _zero
+    if entry <= 0 or stop_loss <= 0:
+        return _zero
+
     risk_per_share = abs(entry - stop_loss)
-    if risk_per_share == 0:
-        return PositionSize(0, 0, 0, 0, 0)
+    if risk_per_share <= 0:
+        return _zero
+
     quantity = max(0, math.floor(max_risk / risk_per_share))
     capital_required = round(quantity * entry, 2)
     reward_per_share = abs(target1 - entry)
@@ -384,36 +400,45 @@ def compute_position_size(entry: float, stop_loss: float, target1: float, max_ri
 # ─────────────────────────────────────────────
 
 def analyze_stock(ticker: str) -> Optional[StockSignal]:
-    df = fetch_ohlcv(ticker)
-    if df is None or len(df) < 22:
-        return None
-
+    # Problem 3 fix: entire function wrapped in try/except — never crashes on bad data
     try:
-        prev_row = df.iloc[-2]
+        df = fetch_ohlcv(ticker)
+        if df is None or df.empty or len(df) < 22:
+            return None
+
+        prev_row  = df.iloc[-2]
         today_row = df.iloc[-1]
 
-        prev_open = float(prev_row["Open"])
-        prev_close = float(prev_row["Close"])
-        today_open = float(today_row["Open"])
-        today_high = float(today_row["High"])
-        today_low = float(today_row["Low"])
+        prev_open   = float(prev_row["Open"])
+        prev_close  = float(prev_row["Close"])
+        today_open  = float(today_row["Open"])
+        today_high  = float(today_row["High"])
+        today_low   = float(today_row["Low"])
         today_close = float(today_row["Close"])
 
+        # Guard against zero/NaN OHLCV
+        if any(math.isnan(v) or v <= 0 for v in [prev_open, prev_close, today_open, today_close]):
+            return None
+
         reference_price = compute_reference_price(prev_open, prev_close)
-        gap_pct = compute_gap_pct(today_open, reference_price)
-        signal = determine_signal(gap_pct)
+        gap_pct  = compute_gap_pct(today_open, reference_price)
+        signal   = determine_signal(gap_pct)
 
-        atr = compute_atr(df)
-        dma20 = compute_20dma(df)
+        atr        = compute_atr(df)
+        dma20      = compute_20dma(df)
         rel_volume = compute_relative_volume(df)
-        rsi = compute_rsi(df)
+        rsi        = compute_rsi(df)
 
-        entry = today_open
+        # Guard zero ATR (Problem 3/robustness)
+        if math.isnan(atr) or atr <= 0:
+            atr = 0.01  # minimal non-zero fallback so stop-loss math doesn't divide by zero
+
+        entry     = today_open
         stop_loss = compute_stop_loss(signal, entry, today_low, today_high, atr)
         t1, t2, t3 = compute_targets(entry, reference_price)
         conf_score, conf_label = compute_confidence_score(gap_pct, atr, entry, dma20, rel_volume)
 
-        return StockSignal(
+        sig_obj = StockSignal(
             ticker=ticker,
             sector=TICKER_TO_SECTOR.get(ticker, "UNKNOWN"),
             signal=signal,
@@ -432,7 +457,21 @@ def analyze_stock(ticker: str) -> Optional[StockSignal]:
             dma20=round(dma20, 2),
             rsi=round(rsi, 1),
         )
-    except Exception:
+
+        # Problem 4 fix: validate all required signal fields are present and non-NaN
+        required_fields = ["signal", "entry", "stop_loss", "target1", "target2", "target3", "confidence_score"]
+        for field in required_fields:
+            val = getattr(sig_obj, field, None)
+            if val is None:
+                return None
+            if isinstance(val, float) and math.isnan(val):
+                return None
+
+        return sig_obj
+
+    except Exception as exc:
+        # Problem 3 fix: log and continue — never propagate to Streamlit UI
+        print(f"[DEBUG] analyze_stock({ticker}) failed: {exc}")
         return None
 
 
@@ -711,28 +750,61 @@ def main() -> None:
         )
 
         # Load signal for selected stock
+        # Auto-recalculates whenever sector, stock, or risk amount changes (no button press needed)
         with st.spinner("Loading..."):
             sig = analyze_stock(ticker_sel)
             df = fetch_ohlcv(ticker_sel)
 
-        if sig:
-            pos = compute_position_size(sig.entry, sig.stop_loss, sig.target1, max_risk)
+        # ── Debug log to Streamlit server console ──────────────────────────
+        if sig is not None:
+            print(
+                f"[DEBUG] Ticker={ticker_sel} | Signal={sig.signal} | "
+                f"Entry={sig.entry} | StopLoss={sig.stop_loss} | "
+                f"RiskPerShare={abs(sig.entry - sig.stop_loss):.2f} | "
+                f"Qty={math.floor(max_risk / abs(sig.entry - sig.stop_loss)) if abs(sig.entry - sig.stop_loss) > 0 else 0}"
+            )
+        else:
+            print(f"[DEBUG] Ticker={ticker_sel} | sig=None — no market data returned")
 
-            st.markdown("---")
-            st.markdown("#### 💼 Position Size")
-            pos_rows = [
-                ("Risk / Share", f"₹{pos.risk_per_share:.2f}"),
-                ("Quantity", f"{pos.quantity} shares"),
-                ("Capital Req.", f"₹{pos.capital_required:,.0f}"),
-                ("Pot. Reward", f"₹{pos.potential_reward:,.0f}"),
-                ("R/R Ratio", f"{pos.rr_ratio:.2f}×"),
-            ]
-            for label, val in pos_rows:
+        # ── Position Sizing Section ─────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### 💼 Position Size")
+
+        # Validate signal exists and has usable data
+        _entry = getattr(sig, "entry", None) if sig is not None else None
+        _sl    = getattr(sig, "stop_loss", None) if sig is not None else None
+        _t1    = getattr(sig, "target1", None) if sig is not None else None
+
+        _entry_ok = _entry is not None and not (isinstance(_entry, float) and math.isnan(_entry)) and _entry > 0
+        _sl_ok    = _sl    is not None and not (isinstance(_sl,    float) and math.isnan(_sl))    and _sl    > 0
+
+        if not _entry_ok or not _sl_ok:
+            st.markdown(
+                '<div class="pos-row"><span class="pos-label" style="color:#f87171;">Trade data unavailable</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _risk_per_share = abs(_entry - _sl)
+            if _risk_per_share <= 0:
                 st.markdown(
-                    f'<div class="pos-row"><span class="pos-label">{label}</span>'
-                    f'<span class="pos-val">{val}</span></div>',
+                    '<div class="pos-row"><span class="pos-label" style="color:#f87171;">Invalid stop loss calculation</span></div>',
                     unsafe_allow_html=True,
                 )
+            else:
+                pos = compute_position_size(_entry, _sl, _t1, max_risk)
+                pos_rows = [
+                    ("Risk / Share", f"₹{pos.risk_per_share:.2f}"),
+                    ("Quantity",     f"{pos.quantity} shares"),
+                    ("Capital Req.", f"₹{pos.capital_required:,.0f}"),
+                    ("Pot. Reward",  f"₹{pos.potential_reward:,.0f}"),
+                    ("R/R Ratio",    f"{pos.rr_ratio:.2f}×"),
+                ]
+                for label, val in pos_rows:
+                    st.markdown(
+                        f'<div class="pos-row"><span class="pos-label">{label}</span>'
+                        f'<span class="pos-val">{val}</span></div>',
+                        unsafe_allow_html=True,
+                    )
 
         st.markdown("---")
         run_scan = st.button("🔄 Refresh Full Scan", type="primary", use_container_width=True)
@@ -750,7 +822,7 @@ def main() -> None:
     signals: list[StockSignal] = st.session_state.get("signals", [])
 
     # ── MAIN CONTENT ─────────────────────────
-    if not sig or not df:
+    if sig is None or df is None or df.empty:
         st.warning("Could not load data for the selected stock. Try another.")
         return
 
@@ -805,7 +877,9 @@ def main() -> None:
         )
 
     with right_col:
-        if sig.signal != "NO SIGNAL":
+        if sig is None:
+            st.info("No trade setup currently available.", icon="ℹ️")
+        elif sig.signal != "NO SIGNAL":
             tc1, tc2, tc3 = st.columns(3)
             entry_delta = ""
             sl_pct = (sig.stop_loss - sig.entry) / sig.entry * 100
