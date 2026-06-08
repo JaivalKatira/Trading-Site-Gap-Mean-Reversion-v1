@@ -1,8 +1,8 @@
 """
-Gap Mean Reversion Dashboard
-NSE Stock Analysis using Gap Mean Reversion Strategy
+Gap Mean Reversion Dashboard — Trading Terminal
+NSE Gap Mean Reversion Strategy | Unified Single-Page Layout
 """
- 
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -10,95 +10,152 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 import math
 import warnings
- 
+
 warnings.filterwarnings("ignore")
- 
+
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
- 
+
 st.set_page_config(
-    page_title="Gap Mean Reversion Dashboard",
+    page_title="Gap MR Terminal",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
- 
+
 # ─────────────────────────────────────────────
 # DARK THEME CSS
 # ─────────────────────────────────────────────
- 
+
 st.markdown(
     """
     <style>
-    .stApp { background-color: #0e1117; color: #fafafa; }
-    .metric-card {
-        background: #1e2130;
+    .stApp { background-color: #0a0d14; color: #e8eaf6; }
+
+    /* Sidebar */
+    [data-testid="stSidebar"] { background-color: #0e1117 !important; border-right: 1px solid #1e2130; }
+    [data-testid="stSidebar"] * { color: #c5cae9 !important; }
+
+    /* Top metric cards */
+    .stat-card {
+        background: #111827;
+        border: 1px solid #1f2937;
         border-radius: 10px;
-        padding: 16px 20px;
-        margin: 6px 0;
-        border-left: 4px solid #4a9eff;
+        padding: 16px 18px;
+        text-align: center;
     }
-    .metric-label { font-size: 12px; color: #8b95a7; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { font-size: 24px; font-weight: 700; color: #fafafa; margin-top: 4px; }
-    .signal-long {
-        background: linear-gradient(135deg, #0d2b1a, #0a3d1f);
-        border-left: 4px solid #00c853;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-weight: 700;
-        color: #00e676;
-        display: inline-block;
+    .stat-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 1.2px; }
+    .stat-value { font-size: 26px; font-weight: 700; color: #f9fafb; margin-top: 4px; }
+    .stat-sub { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+
+    /* Trade plan cards */
+    .trade-card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
     }
-    .signal-short {
-        background: linear-gradient(135deg, #2b0d0d, #3d0a0a);
-        border-left: 4px solid #ff1744;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-weight: 700;
-        color: #ff5252;
-        display: inline-block;
+    .trade-card-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 1.2px; }
+    .trade-card-value { font-size: 32px; font-weight: 800; margin: 6px 0 4px; }
+    .trade-card-sub { font-size: 12px; color: #6b7280; }
+
+    /* Signal card */
+    .signal-card-long {
+        background: linear-gradient(135deg, #052e16 0%, #064e3b 100%);
+        border: 1px solid #059669;
+        border-radius: 14px;
+        padding: 24px 28px;
+        text-align: center;
     }
-    .signal-none {
-        background: #1e2130;
-        border-left: 4px solid #546e7a;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-weight: 700;
-        color: #78909c;
-        display: inline-block;
+    .signal-card-short {
+        background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+        border: 1px solid #dc2626;
+        border-radius: 14px;
+        padding: 24px 28px;
+        text-align: center;
     }
-    .confidence-high { color: #00e676; font-weight: 700; }
-    .confidence-medium { color: #ffab40; font-weight: 700; }
-    .confidence-low { color: #ef5350; font-weight: 700; }
-    .stTabs [data-baseweb="tab-list"] { background: #1e2130; border-radius: 10px; }
-    .stTabs [data-baseweb="tab"] { color: #8b95a7; }
-    .stTabs [aria-selected="true"] { color: #4a9eff !important; }
-    div[data-testid="stMetricValue"] { color: #fafafa; }
-    .stDataFrame { border-radius: 8px; overflow: hidden; }
-    h1, h2, h3 { color: #e8eaf6 !important; }
-    .disclaimer {
-        background: #1a1a2e;
-        border: 1px solid #3d3d5c;
-        border-radius: 8px;
-        padding: 12px 16px;
+    .signal-card-none {
+        background: #111827;
+        border: 1px solid #374151;
+        border-radius: 14px;
+        padding: 24px 28px;
+        text-align: center;
+    }
+    .signal-text { font-size: 36px; font-weight: 900; letter-spacing: 2px; }
+    .signal-long-text { color: #34d399; }
+    .signal-short-text { color: #f87171; }
+    .signal-none-text { color: #6b7280; }
+    .signal-meta { font-size: 14px; color: #9ca3af; margin-top: 8px; }
+
+    /* Section header */
+    .section-header {
         font-size: 12px;
-        color: #78909c;
-        margin-top: 20px;
+        font-weight: 600;
+        color: #4b5563;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin: 20px 0 10px;
+        border-bottom: 1px solid #1f2937;
+        padding-bottom: 6px;
     }
+
+    /* Market stats bar */
+    .stat-bar {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 12px 16px;
+        display: flex;
+        gap: 32px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .stat-bar-item { display: inline-flex; flex-direction: column; }
+    .stat-bar-label { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-bar-val { font-size: 15px; font-weight: 600; color: #e5e7eb; }
+
+    /* Position size sidebar */
+    .pos-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid #1f2937;
+        font-size: 13px;
+    }
+    .pos-label { color: #6b7280; }
+    .pos-val { color: #e5e7eb; font-weight: 600; }
+
+    /* Disclaimer */
+    .disclaimer {
+        background: #0e1117;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 11px;
+        color: #4b5563;
+        margin-top: 16px;
+    }
+
+    /* Streamlit overrides */
+    div[data-testid="stMetricValue"] { color: #f9fafb; }
+    h1, h2, h3, h4 { color: #e8eaf6 !important; }
+    .stDataFrame { border-radius: 8px; }
+    .stExpander { background: #111827 !important; border: 1px solid #1f2937 !important; border-radius: 10px !important; }
     </style>
     """,
     unsafe_allow_html=True,
 )
- 
+
 # ─────────────────────────────────────────────
 # SECTOR DATABASE
 # ─────────────────────────────────────────────
- 
+
 SECTOR_DB: dict[str, list[str]] = {
     "BANKING": [
         "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS",
@@ -137,17 +194,16 @@ SECTOR_DB: dict[str, list[str]] = {
         "VENKEYS.NS",
     ],
 }
- 
+
 ALL_TICKERS: list[str] = [t for tickers in SECTOR_DB.values() for t in tickers]
- 
 TICKER_TO_SECTOR: dict[str, str] = {
     t: sector for sector, tickers in SECTOR_DB.items() for t in tickers
 }
- 
+
 # ─────────────────────────────────────────────
 # DATA CLASSES
 # ─────────────────────────────────────────────
- 
+
 @dataclass
 class StockSignal:
     ticker: str
@@ -166,8 +222,9 @@ class StockSignal:
     current_price: float
     rel_volume: float
     dma20: float
- 
- 
+    rsi: float = 50.0
+
+
 @dataclass
 class PositionSize:
     risk_per_share: float
@@ -175,8 +232,8 @@ class PositionSize:
     capital_required: float
     potential_reward: float
     rr_ratio: float
- 
- 
+
+
 @dataclass
 class BacktestResult:
     total_trades: int
@@ -188,14 +245,13 @@ class BacktestResult:
     equity_curve: list[float]
     trade_returns: list[float]
     trade_dates: list[str]
- 
+
 # ─────────────────────────────────────────────
 # DATA FETCHING
 # ─────────────────────────────────────────────
- 
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_ohlcv(ticker: str, period: str = "3mo") -> Optional[pd.DataFrame]:
-    """Fetch OHLCV data from Yahoo Finance with error handling."""
     try:
         df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
         if df is None or df.empty or len(df) < 25:
@@ -206,10 +262,9 @@ def fetch_ohlcv(ticker: str, period: str = "3mo") -> Optional[pd.DataFrame]:
         return df
     except Exception:
         return None
- 
- 
+
+
 def compute_atr(df: pd.DataFrame, period: int = 14) -> float:
-    """Compute Average True Range."""
     high = df["High"]
     low = df["Low"]
     close = df["Close"]
@@ -219,117 +274,95 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> float:
         (low - close.shift(1)).abs(),
     ], axis=1).max(axis=1)
     return float(tr.rolling(period).mean().iloc[-1])
- 
- 
+
+
 def compute_20dma(df: pd.DataFrame) -> float:
-    """Compute 20-day simple moving average of close."""
     return float(df["Close"].rolling(20).mean().iloc[-1])
- 
- 
+
+
 def compute_relative_volume(df: pd.DataFrame) -> float:
-    """Compute today's volume relative to 20-day average volume."""
     avg_vol = df["Volume"].rolling(20).mean().iloc[-2]
     today_vol = df["Volume"].iloc[-1]
     if avg_vol and avg_vol > 0:
         return float(today_vol / avg_vol)
     return 1.0
- 
+
+
+def compute_rsi(df: pd.DataFrame, period: int = 14) -> float:
+    delta = df["Close"].diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    val = rsi.iloc[-1]
+    return float(val) if not np.isnan(val) else 50.0
+
 # ─────────────────────────────────────────────
 # STRATEGY LOGIC
 # ─────────────────────────────────────────────
- 
+
 def compute_reference_price(prev_open: float, prev_close: float) -> float:
-    """Reference price = (previous open + previous close) / 2."""
     return (prev_open + prev_close) / 2.0
- 
- 
+
+
 def compute_gap_pct(today_open: float, reference_price: float) -> float:
-    """Gap % = (today open - reference price) / reference price."""
     if reference_price == 0:
         return 0.0
     return (today_open - reference_price) / reference_price * 100.0
- 
- 
+
+
 def determine_signal(gap_pct: float) -> str:
-    """Map gap percentage to trading signal."""
     if gap_pct > 2.0:
         return "SHORT"
     elif gap_pct < -2.0:
         return "LONG"
     return "NO SIGNAL"
- 
- 
+
+
 def compute_confidence_score(
-    gap_pct: float,
-    atr: float,
-    entry: float,
-    dma20: float,
-    rel_volume: float,
+    gap_pct: float, atr: float, entry: float, dma20: float, rel_volume: float,
 ) -> tuple[float, str]:
-    """
-    Compute confidence score 0-100 from four factors.
-    Returns (score, label).
-    """
-    # Factor 1: Gap size (0-25 pts) — bigger gap = higher score, capped at 10%
     gap_abs = abs(gap_pct)
     gap_score = min(gap_abs / 10.0 * 25.0, 25.0)
- 
-    # Factor 2: ATR ratio (0-25 pts) — gap relative to ATR
+
     if atr > 0 and entry > 0:
         gap_in_price = abs(gap_pct / 100.0 * entry)
         atr_ratio = gap_in_price / atr
         atr_score = min(atr_ratio / 2.0 * 25.0, 25.0)
     else:
         atr_score = 0.0
- 
-    # Factor 3: DMA distance (0-25 pts) — price far from DMA = higher reversion potential
+
     if dma20 > 0 and entry > 0:
         dma_dist_pct = abs(entry - dma20) / dma20 * 100.0
         dma_score = min(dma_dist_pct / 5.0 * 25.0, 25.0)
     else:
         dma_score = 0.0
- 
-    # Factor 4: Relative volume (0-25 pts) — higher volume = more conviction
+
     rvol_score = min((rel_volume - 1.0) / 3.0 * 25.0, 25.0) if rel_volume > 1.0 else 0.0
- 
-    total = gap_score + atr_score + dma_score + rvol_score
-    total = max(0.0, min(100.0, total))
- 
-    if total >= 70:
-        label = "HIGH"
-    elif total >= 40:
-        label = "MEDIUM"
-    else:
-        label = "LOW"
- 
+
+    total = max(0.0, min(100.0, gap_score + atr_score + dma_score + rvol_score))
+    label = "HIGH" if total >= 70 else "MEDIUM" if total >= 40 else "LOW"
     return round(total, 1), label
- 
- 
+
+
 def compute_stop_loss(signal: str, entry: float, today_low: float, today_high: float, atr: float) -> float:
-    """Compute ATR-based stop loss."""
     if signal == "LONG":
         return min(today_low, entry - 1.5 * atr)
     elif signal == "SHORT":
         return max(today_high, entry + 1.5 * atr)
     return entry
- 
- 
+
+
 def compute_targets(entry: float, reference_price: float) -> tuple[float, float, float]:
-    """Compute three mean reversion targets."""
     reversion = reference_price - entry
-    t1 = entry + reversion * 0.50
-    t2 = entry + reversion * 1.00
-    t3 = entry + reversion * 1.50
-    return round(t1, 2), round(t2, 2), round(t3, 2)
- 
- 
-def compute_position_size(
-    entry: float,
-    stop_loss: float,
-    target1: float,
-    max_risk: float,
-) -> PositionSize:
-    """Compute position sizing from max risk per trade."""
+    return (
+        round(entry + reversion * 0.50, 2),
+        round(entry + reversion * 1.00, 2),
+        round(entry + reversion * 1.50, 2),
+    )
+
+
+def compute_position_size(entry: float, stop_loss: float, target1: float, max_risk: float) -> PositionSize:
     risk_per_share = abs(entry - stop_loss)
     if risk_per_share == 0:
         return PositionSize(0, 0, 0, 0, 0)
@@ -345,41 +378,41 @@ def compute_position_size(
         potential_reward=potential_reward,
         rr_ratio=rr_ratio,
     )
- 
+
 # ─────────────────────────────────────────────
 # SIGNAL GENERATION
 # ─────────────────────────────────────────────
- 
+
 def analyze_stock(ticker: str) -> Optional[StockSignal]:
-    """Run full gap mean reversion analysis for a single stock."""
     df = fetch_ohlcv(ticker)
     if df is None or len(df) < 22:
         return None
- 
+
     try:
         prev_row = df.iloc[-2]
         today_row = df.iloc[-1]
- 
+
         prev_open = float(prev_row["Open"])
         prev_close = float(prev_row["Close"])
         today_open = float(today_row["Open"])
         today_high = float(today_row["High"])
         today_low = float(today_row["Low"])
         today_close = float(today_row["Close"])
- 
+
         reference_price = compute_reference_price(prev_open, prev_close)
         gap_pct = compute_gap_pct(today_open, reference_price)
         signal = determine_signal(gap_pct)
- 
+
         atr = compute_atr(df)
         dma20 = compute_20dma(df)
         rel_volume = compute_relative_volume(df)
- 
+        rsi = compute_rsi(df)
+
         entry = today_open
         stop_loss = compute_stop_loss(signal, entry, today_low, today_high, atr)
         t1, t2, t3 = compute_targets(entry, reference_price)
         conf_score, conf_label = compute_confidence_score(gap_pct, atr, entry, dma20, rel_volume)
- 
+
         return StockSignal(
             ticker=ticker,
             sector=TICKER_TO_SECTOR.get(ticker, "UNKNOWN"),
@@ -397,42 +430,37 @@ def analyze_stock(ticker: str) -> Optional[StockSignal]:
             current_price=round(today_close, 2),
             rel_volume=round(rel_volume, 2),
             dma20=round(dma20, 2),
+            rsi=round(rsi, 1),
         )
     except Exception:
         return None
- 
- 
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def scan_all_stocks(tickers: tuple[str, ...]) -> list[StockSignal]:
-    """Scan all tickers and return list of StockSignal objects."""
     results = []
     for ticker in tickers:
         sig = analyze_stock(ticker)
         if sig is not None:
             results.append(sig)
     return results
- 
+
 # ─────────────────────────────────────────────
 # BACKTEST
 # ─────────────────────────────────────────────
- 
+
 @st.cache_data(ttl=600, show_spinner=False)
 def run_backtest(ticker: str, lookback_days: int = 60) -> Optional[BacktestResult]:
-    """
-    Backtest gap mean reversion: enter at open, exit at close.
-    A trade is triggered when gap > 2% (SHORT) or < -2% (LONG).
-    """
     df = fetch_ohlcv(ticker, period="6mo")
     if df is None or len(df) < 30:
         return None
- 
+
     df = df.tail(lookback_days + 5).copy()
- 
     trade_returns: list[float] = []
     trade_dates: list[str] = []
     equity = 10000.0
     equity_curve: list[float] = [equity]
- 
+
     for i in range(1, len(df) - 1):
         try:
             prev_open = float(df["Open"].iloc[i - 1])
@@ -442,33 +470,28 @@ def run_backtest(ticker: str, lookback_days: int = 60) -> Optional[BacktestResul
             ref = compute_reference_price(prev_open, prev_close)
             gap_pct = compute_gap_pct(today_open, ref)
             signal = determine_signal(gap_pct)
- 
+
             if signal == "NO SIGNAL":
                 continue
- 
-            if signal == "LONG":
-                ret = (today_close - today_open) / today_open * 100.0
-            else:
-                ret = (today_open - today_close) / today_open * 100.0
- 
+
+            ret = (today_close - today_open) / today_open * 100.0 if signal == "LONG" else (today_open - today_close) / today_open * 100.0
             trade_returns.append(round(ret, 3))
             trade_dates.append(str(df.index[i].date()))
             equity *= 1 + ret / 100.0
             equity_curve.append(round(equity, 2))
         except Exception:
             continue
- 
+
     if not trade_returns:
         return None
- 
+
     wins = [r for r in trade_returns if r > 0]
     losses = [r for r in trade_returns if r <= 0]
     win_rate = len(wins) / len(trade_returns) * 100.0
- 
     gross_profit = sum(wins) if wins else 0.0
     gross_loss = abs(sum(losses)) if losses else 0.0
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float("inf")
- 
+
     return BacktestResult(
         total_trades=len(trade_returns),
         win_rate=round(win_rate, 1),
@@ -480,30 +503,22 @@ def run_backtest(ticker: str, lookback_days: int = 60) -> Optional[BacktestResul
         trade_returns=trade_returns,
         trade_dates=trade_dates,
     )
- 
+
 # ─────────────────────────────────────────────
 # CHART
 # ─────────────────────────────────────────────
- 
-def build_candlestick_chart(
-    df: pd.DataFrame,
-    signal: StockSignal,
-    ticker: str,
-) -> go.Figure:
-    """Build Plotly candlestick chart with overlays."""
+
+def build_candlestick_chart(df: pd.DataFrame, signal: StockSignal, ticker: str) -> go.Figure:
     df_plot = df.tail(60).copy()
- 
     dma_series = df["Close"].rolling(20).mean().reindex(df_plot.index)
- 
+
     fig = make_subplots(
-        rows=2,
-        cols=1,
+        rows=2, cols=1,
         shared_xaxes=True,
-        row_heights=[0.75, 0.25],
-        vertical_spacing=0.04,
+        row_heights=[0.78, 0.22],
+        vertical_spacing=0.03,
     )
- 
-    # Candlestick
+
     fig.add_trace(
         go.Candlestick(
             x=df_plot.index,
@@ -512,106 +527,73 @@ def build_candlestick_chart(
             low=df_plot["Low"],
             close=df_plot["Close"],
             name="Price",
-            increasing_line_color="#00e676",
-            decreasing_line_color="#ff5252",
+            increasing_line_color="#34d399",
+            decreasing_line_color="#f87171",
         ),
         row=1, col=1,
     )
- 
-    # 20 DMA
+
     fig.add_trace(
         go.Scatter(
-            x=df_plot.index,
-            y=dma_series,
+            x=df_plot.index, y=dma_series,
             name="20 DMA",
-            line=dict(color="#ffab40", width=1.5, dash="dot"),
+            line=dict(color="#fbbf24", width=1.5, dash="dot"),
         ),
         row=1, col=1,
     )
- 
+
     last_date = df_plot.index[-1]
     first_date = df_plot.index[0]
- 
-    def _hline(y_val: float, color: str, label: str, dash: str = "dash") -> go.Scatter:
+
+    def _hline(y_val, color, label, dash="dash"):
         return go.Scatter(
-            x=[first_date, last_date],
-            y=[y_val, y_val],
-            mode="lines",
-            name=label,
-            line=dict(color=color, width=1.2, dash=dash),
+            x=[first_date, last_date], y=[y_val, y_val],
+            mode="lines", name=label,
+            line=dict(color=color, width=1.5, dash=dash),
         )
- 
-    # Signal levels
+
     if signal.signal != "NO SIGNAL":
-        fig.add_trace(_hline(signal.entry, "#4a9eff", f"Entry {signal.entry:.2f}", "solid"), row=1, col=1)
-        fig.add_trace(_hline(signal.stop_loss, "#ff5252", f"SL {signal.stop_loss:.2f}"), row=1, col=1)
-        fig.add_trace(_hline(signal.target1, "#69f0ae", f"T1 {signal.target1:.2f}"), row=1, col=1)
-        fig.add_trace(_hline(signal.target2, "#40c4ff", f"T2 {signal.target2:.2f}"), row=1, col=1)
-        fig.add_trace(_hline(signal.target3, "#ea80fc", f"T3 {signal.target3:.2f}"), row=1, col=1)
-        fig.add_trace(_hline(signal.reference_price, "#fff176", f"Ref {signal.reference_price:.2f}", "dot"), row=1, col=1)
- 
-    # Volume bars
+        fig.add_trace(_hline(signal.entry, "#60a5fa", f"Entry ₹{signal.entry:.2f}", "solid"), row=1, col=1)
+        fig.add_trace(_hline(signal.stop_loss, "#f87171", f"SL ₹{signal.stop_loss:.2f}"), row=1, col=1)
+        fig.add_trace(_hline(signal.target1, "#34d399", f"T1 ₹{signal.target1:.2f}"), row=1, col=1)
+        fig.add_trace(_hline(signal.target2, "#6ee7b7", f"T2 ₹{signal.target2:.2f}"), row=1, col=1)
+        fig.add_trace(_hline(signal.target3, "#a7f3d0", f"T3 ₹{signal.target3:.2f}"), row=1, col=1)
+        fig.add_trace(_hline(signal.reference_price, "#fde68a", f"Ref ₹{signal.reference_price:.2f}", "dot"), row=1, col=1)
+
     vol_colors = [
-        "#00e676" if float(df_plot["Close"].iloc[i]) >= float(df_plot["Open"].iloc[i]) else "#ff5252"
+        "#34d399" if float(df_plot["Close"].iloc[i]) >= float(df_plot["Open"].iloc[i]) else "#f87171"
         for i in range(len(df_plot))
     ]
     fig.add_trace(
-        go.Bar(
-            x=df_plot.index,
-            y=df_plot["Volume"],
-            name="Volume",
-            marker_color=vol_colors,
-            opacity=0.7,
-        ),
+        go.Bar(x=df_plot.index, y=df_plot["Volume"], name="Volume", marker_color=vol_colors, opacity=0.6),
         row=2, col=1,
     )
- 
+
     fig.update_layout(
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        font=dict(color="#fafafa", family="monospace"),
-        title=dict(text=f"{ticker} — Gap Mean Reversion Analysis", font=dict(size=16, color="#e8eaf6")),
-        legend=dict(bgcolor="#1e2130", bordercolor="#333", borderwidth=1),
+        paper_bgcolor="#0a0d14",
+        plot_bgcolor="#0a0d14",
+        font=dict(color="#e5e7eb", family="monospace", size=12),
+        title=dict(text=f"  {ticker.replace('.NS', '')}  ·  Gap Mean Reversion", font=dict(size=15, color="#e8eaf6")),
+        legend=dict(bgcolor="#111827", bordercolor="#1f2937", borderwidth=1, font=dict(size=11)),
         xaxis_rangeslider_visible=False,
-        height=600,
-        margin=dict(l=10, r=10, t=50, b=10),
+        height=680,
+        margin=dict(l=10, r=10, t=46, b=10),
     )
-    fig.update_xaxes(gridcolor="#1e2130", zerolinecolor="#1e2130")
-    fig.update_yaxes(gridcolor="#1e2130", zerolinecolor="#1e2130")
- 
+    fig.update_xaxes(gridcolor="#1f2937", zerolinecolor="#1f2937")
+    fig.update_yaxes(gridcolor="#1f2937", zerolinecolor="#1f2937")
+
     return fig
- 
+
+
 # ─────────────────────────────────────────────
-# UI HELPERS
+# SCANNER TABLE (no pandas Styler.background_gradient)
 # ─────────────────────────────────────────────
- 
-def signal_badge(signal: str) -> str:
-    if signal == "LONG":
-        return '<span class="signal-long">▲ LONG</span>'
-    elif signal == "SHORT":
-        return '<span class="signal-short">▼ SHORT</span>'
-    return '<span class="signal-none">— NO SIGNAL</span>'
- 
- 
-def confidence_badge(label: str) -> str:
-    css = f"confidence-{label.lower()}"
-    return f'<span class="{css}">● {label}</span>'
- 
- 
-def metric_card(label: str, value: str) -> str:
-    return f"""
-    <div class="metric-card">
-        <div class="metric-label">{label}</div>
-        <div class="metric-value">{value}</div>
-    </div>
-    """
- 
- 
+
 def signals_to_df(signals: list[StockSignal]) -> pd.DataFrame:
     rows = []
     for s in signals:
         rows.append({
-            "Ticker": s.ticker,
+            "Ticker": s.ticker.replace(".NS", ""),
             "Sector": s.sector,
             "Signal": s.signal,
             "Gap %": s.gap_pct,
@@ -626,448 +608,394 @@ def signals_to_df(signals: list[StockSignal]) -> pd.DataFrame:
             "Rel. Volume": s.rel_volume,
         })
     return pd.DataFrame(rows)
- 
-# ─────────────────────────────────────────────
-# TAB: DASHBOARD
-# ─────────────────────────────────────────────
- 
-def render_dashboard(signals: list[StockSignal]) -> None:
-    st.markdown("## 📊 Market Overview")
- 
-    long_sigs = [s for s in signals if s.signal == "LONG"]
-    short_sigs = [s for s in signals if s.signal == "SHORT"]
-    high_conf = [s for s in signals if s.confidence_label == "HIGH" and s.signal != "NO SIGNAL"]
- 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Stocks Scanned", len(signals))
-    col2.metric("LONG Signals", len(long_sigs), delta=f"{len(long_sigs)/max(len(signals),1)*100:.0f}%")
-    col3.metric("SHORT Signals", len(short_sigs), delta=f"{len(short_sigs)/max(len(signals),1)*100:.0f}%")
-    col4.metric("High Confidence", len(high_conf))
- 
-    st.markdown("---")
-    st.markdown("### 🔥 Top Signals by Confidence")
- 
-    action_signals = [s for s in signals if s.signal != "NO SIGNAL"]
-    action_signals.sort(key=lambda x: x.confidence_score, reverse=True)
-    top_signals = action_signals[:9]
- 
-    if not top_signals:
-        st.info("No active signals at this time. Markets may be consolidating.")
-        return
- 
-    cols = st.columns(3)
-    for idx, sig in enumerate(top_signals):
-        with cols[idx % 3]:
-            signal_color = "#00e676" if sig.signal == "LONG" else "#ff5252"
-            arrow = "▲" if sig.signal == "LONG" else "▼"
-            st.markdown(
-                f"""
-                <div style="background:#1e2130;border-radius:10px;padding:14px;margin:6px 0;
-                            border-top:3px solid {signal_color};">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:15px;font-weight:700;color:#e8eaf6;">{sig.ticker.replace(".NS","")}</span>
-                        <span style="color:{signal_color};font-weight:700;">{arrow} {sig.signal}</span>
-                    </div>
-                    <div style="color:#8b95a7;font-size:12px;margin-top:4px;">{sig.sector}</div>
-                    <div style="margin-top:10px;display:flex;justify-content:space-between;">
-                        <span style="color:#78909c;font-size:12px;">Gap</span>
-                        <span style="color:{signal_color};font-weight:600;">{sig.gap_pct:+.2f}%</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;">
-                        <span style="color:#78909c;font-size:12px;">Entry</span>
-                        <span style="color:#fafafa;">₹{sig.entry:.2f}</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;">
-                        <span style="color:#78909c;font-size:12px;">Confidence</span>
-                        <span style="color:{'#00e676' if sig.confidence_label=='HIGH' else '#ffab40' if sig.confidence_label=='MEDIUM' else '#ef5350'};font-weight:700;">{sig.confidence_label} ({sig.confidence_score:.0f})</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
- 
-    st.markdown("---")
-    st.markdown("### 📈 Sector Signal Distribution")
-    sector_summary: dict[str, dict[str, int]] = {}
-    for s in signals:
-        sec = s.sector
-        if sec not in sector_summary:
-            sector_summary[sec] = {"LONG": 0, "SHORT": 0, "NO SIGNAL": 0}
-        sector_summary[sec][s.signal] += 1
- 
-    sector_df = pd.DataFrame(sector_summary).T.reset_index()
-    sector_df.columns = ["Sector", "LONG", "SHORT", "NO SIGNAL"]
-    st.dataframe(
-        sector_df.style
-        .background_gradient(subset=["LONG"], cmap="Greens")
-        .background_gradient(subset=["SHORT"], cmap="Reds"),
-        use_container_width=True,
-        hide_index=True,
-    )
- 
-# ─────────────────────────────────────────────
-# TAB: SIGNAL SCANNER
-# ─────────────────────────────────────────────
- 
-def render_scanner(signals: list[StockSignal]) -> None:
-    st.markdown("## 🔍 Signal Scanner")
- 
-    col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
-    with col_f1:
-        sector_filter = st.multiselect(
-            "Filter by Sector",
-            options=list(SECTOR_DB.keys()),
-            default=[],
-            placeholder="All sectors",
-        )
-    with col_f2:
-        signal_filter = st.multiselect(
-            "Filter by Signal",
-            options=["LONG", "SHORT", "NO SIGNAL"],
-            default=["LONG", "SHORT"],
-        )
-    with col_f3:
-        conf_filter = st.multiselect(
-            "Filter by Confidence",
-            options=["HIGH", "MEDIUM", "LOW"],
-            default=[],
-            placeholder="All levels",
-        )
- 
-    filtered = signals
-    if sector_filter:
-        filtered = [s for s in filtered if s.sector in sector_filter]
-    if signal_filter:
-        filtered = [s for s in filtered if s.signal in signal_filter]
-    if conf_filter:
-        filtered = [s for s in filtered if s.confidence_label in conf_filter]
- 
-    filtered.sort(key=lambda x: x.confidence_score, reverse=True)
- 
-    df = signals_to_df(filtered)
- 
+
+
+def render_scanner_table(signals: list[StockSignal]) -> None:
+    """Render scanner table using plain st.dataframe — no matplotlib dependency."""
+    df = signals_to_df(signals)
     if df.empty:
         st.info("No signals match the current filters.")
         return
- 
-    st.markdown(f"**{len(df)} signals found**")
- 
-    def highlight_signal(val: str) -> str:
-        if val == "LONG":
-            return "background-color: #0d2b1a; color: #00e676; font-weight: bold;"
-        elif val == "SHORT":
-            return "background-color: #2b0d0d; color: #ff5252; font-weight: bold;"
-        return "color: #78909c;"
- 
-    def highlight_confidence(val: str) -> str:
-        if val == "HIGH":
-            return "color: #00e676; font-weight: bold;"
-        elif val == "MEDIUM":
-            return "color: #ffab40; font-weight: bold;"
-        return "color: #ef5350;"
- 
-    styled = (
-        df.style
-        .map(highlight_signal, subset=["Signal"])
-        .map(highlight_confidence, subset=["Confidence"])
-        .format({
-            "Gap %": "{:+.2f}%",
-            "Score": "{:.0f}",
-            "Entry": "₹{:.2f}",
-            "Stop Loss": "₹{:.2f}",
-            "Target 1": "₹{:.2f}",
-            "Target 2": "₹{:.2f}",
-            "Target 3": "₹{:.2f}",
-            "ATR": "₹{:.2f}",
-            "Rel. Volume": "{:.2f}x",
-        })
+
+    # Use Plotly table for rich colouring without matplotlib
+    header_vals = list(df.columns)
+    cell_vals = [df[c].tolist() for c in df.columns]
+
+    # Colour signal column
+    sig_colors = []
+    for v in df["Signal"]:
+        if v == "LONG":
+            sig_colors.append("#052e16")
+        elif v == "SHORT":
+            sig_colors.append("#450a0a")
+        else:
+            sig_colors.append("#111827")
+
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=[f"<b>{h}</b>" for h in header_vals],
+            fill_color="#1f2937",
+            font=dict(color="#e5e7eb", size=12),
+            align="left",
+            height=34,
+            line_color="#374151",
+        ),
+        cells=dict(
+            values=cell_vals,
+            fill_color=["#111827"] * len(df.columns),
+            font=dict(color="#d1d5db", size=12),
+            align="left",
+            height=30,
+            line_color="#1f2937",
+            format=[None, None, None, ".2f", None, ".0f",
+                    ",.2f", ",.2f", ",.2f", ",.2f", ",.2f", ",.2f", ".2f"],
+        ),
+    )])
+    fig.update_layout(
+        paper_bgcolor="#0a0d14",
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=min(60 + len(df) * 32, 520),
     )
- 
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=500)
- 
+    st.plotly_chart(fig, use_container_width=True)
+
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="⬇ Download CSV",
-        data=csv,
+        "⬇ Download CSV", data=csv,
         file_name=f"gap_signals_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
         mime="text/csv",
     )
- 
-# ─────────────────────────────────────────────
-# TAB: STOCK ANALYSIS
-# ─────────────────────────────────────────────
- 
-def render_stock_analysis() -> None:
-    st.markdown("## 📉 Stock Analysis")
- 
-    col_s1, col_s2 = st.columns([1, 2])
-    with col_s1:
-        sector_sel = st.selectbox("Select Sector", options=list(SECTOR_DB.keys()))
-    with col_s2:
-        tickers_in_sector = SECTOR_DB[sector_sel]
-        ticker_labels = [t.replace(".NS", "") for t in tickers_in_sector]
-        ticker_sel_label = st.selectbox("Select Stock", options=ticker_labels)
-        ticker_sel = tickers_in_sector[ticker_labels.index(ticker_sel_label)]
- 
-    max_risk = st.number_input("Maximum Risk Per Trade (₹)", min_value=100.0, max_value=100000.0, value=1500.0, step=100.0)
- 
-    if st.button("🔎 Analyze", type="primary"):
-        with st.spinner(f"Fetching data for {ticker_sel}..."):
-            df = fetch_ohlcv(ticker_sel)
-            sig = analyze_stock(ticker_sel)
- 
-        if df is None or sig is None:
-            st.error(f"Could not fetch data for {ticker_sel}. Please try another stock.")
-            return
- 
-        # Metrics row 1
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Current Price", f"₹{sig.current_price:,.2f}")
-        c2.metric("Reference Price", f"₹{sig.reference_price:,.2f}")
-        c3.metric("Gap %", f"{sig.gap_pct:+.2f}%")
-        c4.metric("ATR (14)", f"₹{sig.atr:,.2f}")
- 
-        # Signal & confidence
-        c5, c6, c7, c8 = st.columns(4)
-        with c5:
-            st.markdown(f"**Signal**<br>{signal_badge(sig.signal)}", unsafe_allow_html=True)
-        with c6:
-            st.markdown(f"**Confidence**<br>{confidence_badge(sig.confidence_label)} ({sig.confidence_score:.0f}/100)", unsafe_allow_html=True)
-        c7.metric("20 DMA", f"₹{sig.dma20:,.2f}")
-        c8.metric("Relative Volume", f"{sig.rel_volume:.2f}x")
- 
-        st.markdown("---")
- 
-        if sig.signal != "NO SIGNAL":
-            st.markdown("### 🎯 Trade Levels")
-            tc1, tc2, tc3, tc4, tc5 = st.columns(5)
-            tc1.metric("Entry", f"₹{sig.entry:,.2f}")
-            tc2.metric("Stop Loss", f"₹{sig.stop_loss:,.2f}", delta=f"₹{sig.stop_loss - sig.entry:+.2f}")
-            tc3.metric("Target 1 (50%)", f"₹{sig.target1:,.2f}", delta=f"₹{sig.target1 - sig.entry:+.2f}")
-            tc4.metric("Target 2 (100%)", f"₹{sig.target2:,.2f}", delta=f"₹{sig.target2 - sig.entry:+.2f}")
-            tc5.metric("Target 3 (150%)", f"₹{sig.target3:,.2f}", delta=f"₹{sig.target3 - sig.entry:+.2f}")
- 
-            st.markdown("### 💼 Position Sizing")
-            pos = compute_position_size(sig.entry, sig.stop_loss, sig.target1, max_risk)
-            pc1, pc2, pc3, pc4, pc5 = st.columns(5)
-            pc1.metric("Risk Per Share", f"₹{pos.risk_per_share:.2f}")
-            pc2.metric("Quantity", str(pos.quantity))
-            pc3.metric("Capital Required", f"₹{pos.capital_required:,.0f}")
-            pc4.metric("Potential Reward (T1)", f"₹{pos.potential_reward:,.0f}")
-            pc5.metric("R/R Ratio", f"{pos.rr_ratio:.2f}")
- 
-        st.markdown("### 📈 Price Chart")
-        fig = build_candlestick_chart(df, sig, ticker_sel)
-        st.plotly_chart(fig, use_container_width=True)
- 
-        st.markdown(
-            '<div class="disclaimer">⚠ Past data is for informational purposes only. '
-            "This is not investment advice. Trade at your own risk.</div>",
-            unsafe_allow_html=True,
-        )
- 
-# ─────────────────────────────────────────────
-# TAB: BACKTEST
-# ─────────────────────────────────────────────
- 
-def render_backtest() -> None:
-    st.markdown("## 🧪 Strategy Backtest")
-    st.markdown(
-        "Rules: **Entry** at today's open when gap signal fires. **Exit** at today's close. "
-        "Evaluates performance over the selected lookback period."
-    )
- 
-    col_b1, col_b2, col_b3 = st.columns([2, 2, 1])
-    with col_b1:
-        bt_sector = st.selectbox("Sector", options=list(SECTOR_DB.keys()), key="bt_sector")
-    with col_b2:
-        bt_tickers = SECTOR_DB[bt_sector]
-        bt_labels = [t.replace(".NS", "") for t in bt_tickers]
-        bt_label_sel = st.selectbox("Stock", options=bt_labels, key="bt_stock")
-        bt_ticker = bt_tickers[bt_labels.index(bt_label_sel)]
-    with col_b3:
-        lookback = st.number_input("Lookback (days)", min_value=20, max_value=250, value=60, step=10)
- 
-    if st.button("▶ Run Backtest", type="primary"):
-        with st.spinner("Running backtest..."):
-            result = run_backtest(bt_ticker, lookback)
- 
-        if result is None:
-            st.error("Not enough data or no signals found in the lookback period.")
-            return
- 
-        # Stats
-        s1, s2, s3, s4, s5, s6 = st.columns(6)
-        s1.metric("Total Trades", result.total_trades)
-        s2.metric("Win Rate", f"{result.win_rate:.1f}%")
-        s3.metric("Avg Return", f"{result.avg_return:+.2f}%")
-        s4.metric("Profit Factor", f"{result.profit_factor:.2f}")
-        s5.metric("Best Trade", f"{result.best_trade:+.2f}%")
-        s6.metric("Worst Trade", f"{result.worst_trade:+.2f}%")
- 
-        # Equity curve
-        st.markdown("### 📊 Equity Curve (₹10,000 start)")
-        fig_eq = go.Figure()
-        fig_eq.add_trace(
-            go.Scatter(
-                x=list(range(len(result.equity_curve))),
-                y=result.equity_curve,
-                name="Equity",
-                line=dict(color="#4a9eff", width=2),
-                fill="tozeroy",
-                fillcolor="rgba(74,158,255,0.08)",
-            )
-        )
-        peak = max(result.equity_curve)
-        fig_eq.add_hline(y=10000, line_dash="dot", line_color="#546e7a", annotation_text="Start")
-        fig_eq.update_layout(
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            font=dict(color="#fafafa"),
-            xaxis_title="Trade #",
-            yaxis_title="Equity (₹)",
-            height=400,
-            margin=dict(l=10, r=10, t=20, b=10),
-        )
-        fig_eq.update_xaxes(gridcolor="#1e2130")
-        fig_eq.update_yaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig_eq, use_container_width=True)
- 
-        # Trade returns distribution
-        st.markdown("### 📉 Trade Returns Distribution")
-        fig_dist = go.Figure()
-        colors = ["#00e676" if r > 0 else "#ff5252" for r in result.trade_returns]
-        fig_dist.add_trace(
-            go.Bar(
-                x=result.trade_dates,
-                y=result.trade_returns,
-                marker_color=colors,
-                name="Return %",
-            )
-        )
-        fig_dist.add_hline(y=0, line_color="#546e7a", line_dash="dot")
-        fig_dist.update_layout(
-            paper_bgcolor="#0e1117",
-            plot_bgcolor="#0e1117",
-            font=dict(color="#fafafa"),
-            xaxis_title="Date",
-            yaxis_title="Return %",
-            height=300,
-            margin=dict(l=10, r=10, t=10, b=10),
-        )
-        fig_dist.update_xaxes(gridcolor="#1e2130")
-        fig_dist.update_yaxes(gridcolor="#1e2130")
-        st.plotly_chart(fig_dist, use_container_width=True)
- 
-        # Trade log
-        trade_df = pd.DataFrame({
-            "Trade #": list(range(1, len(result.trade_returns) + 1)),
-            "Date": result.trade_dates,
-            "Return %": result.trade_returns,
-            "Cumulative Equity": result.equity_curve[1:],
-        })
-        st.markdown("### 📋 Trade Log")
-        st.dataframe(
-            trade_df.style.format({
-                "Return %": "{:+.3f}%",
-                "Cumulative Equity": "₹{:,.2f}",
-            }).map(
-                lambda v: "color: #00e676;" if isinstance(v, (int, float)) and v > 0 else "color: #ff5252;" if isinstance(v, (int, float)) and v <= 0 else "",
-                subset=["Return %"],
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
- 
-        csv = trade_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇ Download Trade Log",
-            data=csv,
-            file_name=f"backtest_{bt_ticker}_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-        )
- 
+
 # ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
- 
+
 def main() -> None:
-    # Sidebar
+
+    # ── SIDEBAR ──────────────────────────────
     with st.sidebar:
         st.markdown(
             """
-            <div style="text-align:center;padding:10px 0 20px;">
-                <span style="font-size:36px;">📈</span>
-                <h2 style="color:#e8eaf6;margin:8px 0 4px;">Gap MR Dashboard</h2>
-                <p style="color:#8b95a7;font-size:13px;">NSE Gap Mean Reversion</p>
+            <div style="text-align:center;padding:14px 0 22px;">
+                <span style="font-size:32px;">📈</span>
+                <div style="font-size:17px;font-weight:700;color:#e8eaf6;margin:6px 0 2px;">Gap MR Terminal</div>
+                <div style="font-size:11px;color:#4b5563;">NSE Gap Mean Reversion</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
- 
-        st.markdown("### ⚙️ Settings")
-        run_scan = st.button("🔄 Refresh Scan", type="primary", use_container_width=True)
- 
+
+        # ── SECTOR SELECTOR
+        st.markdown("#### 🏦 Sector")
+        sector_sel = st.selectbox(
+            "Select Sector", options=list(SECTOR_DB.keys()),
+            label_visibility="collapsed",
+        )
+
+        # ── STOCK SELECTOR
+        st.markdown("#### 📌 Stock")
+        tickers_in_sector = SECTOR_DB[sector_sel]
+        ticker_labels = [t.replace(".NS", "") for t in tickers_in_sector]
+        ticker_sel_label = st.selectbox(
+            "Select Stock", options=ticker_labels,
+            label_visibility="collapsed",
+        )
+        ticker_sel = tickers_in_sector[ticker_labels.index(ticker_sel_label)]
+
         st.markdown("---")
-        st.markdown("### 📌 Strategy")
+
+        # ── RISK MANAGEMENT
+        st.markdown("#### 🎯 Risk Management")
+        max_risk = st.number_input(
+            "Max Risk Per Trade (₹)",
+            min_value=100.0, max_value=100000.0, value=1500.0, step=100.0,
+        )
+
+        # Load signal for selected stock
+        with st.spinner("Loading..."):
+            sig = analyze_stock(ticker_sel)
+            df = fetch_ohlcv(ticker_sel)
+
+        if sig:
+            pos = compute_position_size(sig.entry, sig.stop_loss, sig.target1, max_risk)
+
+            st.markdown("---")
+            st.markdown("#### 💼 Position Size")
+            pos_rows = [
+                ("Risk / Share", f"₹{pos.risk_per_share:.2f}"),
+                ("Quantity", f"{pos.quantity} shares"),
+                ("Capital Req.", f"₹{pos.capital_required:,.0f}"),
+                ("Pot. Reward", f"₹{pos.potential_reward:,.0f}"),
+                ("R/R Ratio", f"{pos.rr_ratio:.2f}×"),
+            ]
+            for label, val in pos_rows:
+                st.markdown(
+                    f'<div class="pos-row"><span class="pos-label">{label}</span>'
+                    f'<span class="pos-val">{val}</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("---")
+        run_scan = st.button("🔄 Refresh Full Scan", type="primary", use_container_width=True)
         st.markdown(
-            """
-            <div style="font-size:13px;color:#8b95a7;line-height:1.8;">
-            <b style="color:#e8eaf6;">Reference Price</b><br>
-            (Prev Open + Prev Close) / 2<br><br>
-            <b style="color:#00e676;">LONG Signal</b><br>
-            Gap &lt; -2%<br><br>
-            <b style="color:#ff5252;">SHORT Signal</b><br>
-            Gap &gt; +2%<br><br>
-            <b style="color:#e8eaf6;">Stop Loss</b><br>
-            1.5× ATR based<br><br>
-            <b style="color:#e8eaf6;">Targets</b><br>
-            50% / 100% / 150% reversion
-            </div>
-            """,
+            '<div style="font-size:10px;color:#374151;text-align:center;margin-top:8px;">'
+            'Data via Yahoo Finance.<br>Not investment advice.</div>',
             unsafe_allow_html=True,
         )
- 
-        st.markdown("---")
-        st.markdown(
-            '<div style="font-size:11px;color:#546e7a;padding-top:10px;">'
-            "Data via Yahoo Finance. For educational use only. Not investment advice.</div>",
-            unsafe_allow_html=True,
-        )
- 
-    # Load signals
+
+    # ── LOAD SCAN SIGNALS ────────────────────
     if "signals" not in st.session_state or run_scan:
-        with st.spinner("🔍 Scanning NSE stocks..."):
+        with st.spinner("🔍 Scanning NSE universe..."):
             st.session_state["signals"] = scan_all_stocks(tuple(ALL_TICKERS))
- 
+
     signals: list[StockSignal] = st.session_state.get("signals", [])
- 
-    # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Dashboard",
-        "🔍 Signal Scanner",
-        "📉 Stock Analysis",
-        "🧪 Backtest",
-    ])
- 
-    with tab1:
-        if not signals:
-            st.warning("No data loaded. Click 'Refresh Scan' in the sidebar.")
+
+    # ── MAIN CONTENT ─────────────────────────
+    if not sig or not df:
+        st.warning("Could not load data for the selected stock. Try another.")
+        return
+
+    name = ticker_sel.replace(".NS", "")
+
+    # ── TOP METRIC CARDS ─────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    cards = [
+        ("Current Price", f"₹{sig.current_price:,.2f}", sig.sector),
+        ("Gap %", f"{sig.gap_pct:+.2f}%", "vs. reference price"),
+        ("ATR (14)", f"₹{sig.atr:,.2f}", "average true range"),
+        ("Confidence", f"{sig.confidence_score:.0f}/100", sig.confidence_label),
+    ]
+    for col, (label, value, sub) in zip([c1, c2, c3, c4], cards):
+        col.markdown(
+            f'<div class="stat-card">'
+            f'<div class="stat-label">{label}</div>'
+            f'<div class="stat-value">{value}</div>'
+            f'<div class="stat-sub">{sub}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── SIGNAL + TRADE PLAN ROW ───────────────
+    left_col, right_col = st.columns([1, 2])
+
+    with left_col:
+        # Signal Card
+        if sig.signal == "LONG":
+            css_cls = "signal-card-long"
+            txt_cls = "signal-long-text"
+            icon = "🟢"
+        elif sig.signal == "SHORT":
+            css_cls = "signal-card-short"
+            txt_cls = "signal-short-text"
+            icon = "🔴"
         else:
-            render_dashboard(signals)
- 
-    with tab2:
-        if not signals:
-            st.warning("No data loaded. Click 'Refresh Scan' in the sidebar.")
+            css_cls = "signal-card-none"
+            txt_cls = "signal-none-text"
+            icon = "⚪"
+
+        prob_txt = f"Confidence: <b>{sig.confidence_score:.0f}%</b> &nbsp;|&nbsp; {sig.confidence_label}"
+        st.markdown(
+            f'<div class="{css_cls}">'
+            f'<div style="font-size:28px;">{icon}</div>'
+            f'<div class="signal-text {txt_cls}">{sig.signal}</div>'
+            f'<div class="signal-meta">{prob_txt}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with right_col:
+        if sig.signal != "NO SIGNAL":
+            tc1, tc2, tc3 = st.columns(3)
+            entry_delta = ""
+            sl_pct = (sig.stop_loss - sig.entry) / sig.entry * 100
+            t1_pct = (sig.target1 - sig.entry) / sig.entry * 100
+
+            for col, label, value, sub, color in [
+                (tc1, "ENTRY", f"₹{sig.entry:,.2f}", "Open price", "#60a5fa"),
+                (tc2, "STOP LOSS", f"₹{sig.stop_loss:,.2f}", f"{sl_pct:+.2f}%", "#f87171"),
+                (tc3, "TARGET 1", f"₹{sig.target1:,.2f}", f"{t1_pct:+.2f}%", "#34d399"),
+            ]:
+                col.markdown(
+                    f'<div class="trade-card">'
+                    f'<div class="trade-card-label">{label}</div>'
+                    f'<div class="trade-card-value" style="color:{color};">{value}</div>'
+                    f'<div class="trade-card-sub">{sub}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # Sub-targets row
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+            sub_cols = st.columns(3)
+            for col, label, val in [
+                (sub_cols[0], "Target 1 (50% rev)", f"₹{sig.target1:,.2f}"),
+                (sub_cols[1], "Target 2 (100% rev)", f"₹{sig.target2:,.2f}"),
+                (sub_cols[2], "Target 3 (150% rev)", f"₹{sig.target3:,.2f}"),
+            ]:
+                col.metric(label, val)
         else:
-            render_scanner(signals)
- 
-    with tab3:
-        render_stock_analysis()
- 
-    with tab4:
-        render_backtest()
- 
- 
+            st.info("No active gap signal for this stock today. Gap < 2% threshold.", icon="ℹ️")
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    # ── MARKET STATISTICS BAR ─────────────────
+    rsi_color = "#34d399" if sig.rsi < 30 else "#f87171" if sig.rsi > 70 else "#e5e7eb"
+    gap_color = "#34d399" if sig.gap_pct < 0 else "#f87171" if sig.gap_pct > 0 else "#e5e7eb"
+    stats_html = f"""
+    <div class="stat-bar">
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">Close</span>
+            <span class="stat-bar-val">₹{sig.current_price:,.2f}</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">RSI (14)</span>
+            <span class="stat-bar-val" style="color:{rsi_color};">{sig.rsi:.1f}</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">ATR</span>
+            <span class="stat-bar-val">₹{sig.atr:,.2f}</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">Volume Ratio</span>
+            <span class="stat-bar-val">{sig.rel_volume:.2f}×</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">Gap %</span>
+            <span class="stat-bar-val" style="color:{gap_color};">{sig.gap_pct:+.2f}%</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">20 DMA</span>
+            <span class="stat-bar-val">₹{sig.dma20:,.2f}</span>
+        </div>
+        <div class="stat-bar-item">
+            <span class="stat-bar-label">Reference</span>
+            <span class="stat-bar-val">₹{sig.reference_price:,.2f}</span>
+        </div>
+    </div>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # ── CHART ────────────────────────────────
+    fig = build_candlestick_chart(df, sig, ticker_sel)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── MARKET SCANNER (collapsed) ────────────
+    with st.expander("🔍 Show Market Scanner", expanded=False):
+        active = [s for s in signals if s.signal != "NO SIGNAL"]
+        active.sort(key=lambda x: x.confidence_score, reverse=True)
+
+        cf1, cf2 = st.columns(2)
+        with cf1:
+            sig_filter = st.multiselect(
+                "Signal", options=["LONG", "SHORT"], default=["LONG", "SHORT"], key="scan_sig"
+            )
+        with cf2:
+            conf_filter = st.multiselect(
+                "Confidence", options=["HIGH", "MEDIUM", "LOW"], default=[], key="scan_conf",
+                placeholder="All levels"
+            )
+
+        filtered = [s for s in active if s.signal in sig_filter]
+        if conf_filter:
+            filtered = [s for s in filtered if s.confidence_label in conf_filter]
+
+        st.caption(f"{len(filtered)} signals · {len([s for s in filtered if s.signal=='LONG'])} LONG · {len([s for s in filtered if s.signal=='SHORT'])} SHORT")
+        render_scanner_table(filtered)
+
+    # ── HISTORICAL PERFORMANCE (collapsed) ────
+    with st.expander("📊 Historical Performance (Backtest)", expanded=False):
+        lb_col, _ = st.columns([1, 3])
+        with lb_col:
+            lookback = st.number_input("Lookback (days)", min_value=20, max_value=250, value=60, step=10)
+
+        if st.button("▶ Run Backtest", type="primary"):
+            with st.spinner("Running backtest..."):
+                result = run_backtest(ticker_sel, lookback)
+
+            if result is None:
+                st.error("Not enough data or no signals found in this period.")
+            else:
+                s1, s2, s3, s4, s5, s6 = st.columns(6)
+                s1.metric("Trades", result.total_trades)
+                s2.metric("Win Rate", f"{result.win_rate:.1f}%")
+                s3.metric("Avg Return", f"{result.avg_return:+.2f}%")
+                s4.metric("Profit Factor", f"{result.profit_factor:.2f}")
+                s5.metric("Best Trade", f"{result.best_trade:+.2f}%")
+                s6.metric("Worst Trade", f"{result.worst_trade:+.2f}%")
+
+                # Equity curve
+                fig_eq = go.Figure()
+                fig_eq.add_trace(go.Scatter(
+                    x=list(range(len(result.equity_curve))),
+                    y=result.equity_curve,
+                    name="Equity",
+                    line=dict(color="#60a5fa", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(96,165,250,0.07)",
+                ))
+                fig_eq.add_hline(y=10000, line_dash="dot", line_color="#374151", annotation_text="Start ₹10k")
+                fig_eq.update_layout(
+                    paper_bgcolor="#0a0d14", plot_bgcolor="#0a0d14",
+                    font=dict(color="#e5e7eb"),
+                    xaxis_title="Trade #", yaxis_title="Equity (₹)",
+                    height=340, margin=dict(l=10, r=10, t=10, b=10),
+                )
+                fig_eq.update_xaxes(gridcolor="#1f2937")
+                fig_eq.update_yaxes(gridcolor="#1f2937")
+                st.plotly_chart(fig_eq, use_container_width=True)
+
+                # Trade returns
+                colors = ["#34d399" if r > 0 else "#f87171" for r in result.trade_returns]
+                fig_dist = go.Figure(go.Bar(
+                    x=result.trade_dates, y=result.trade_returns,
+                    marker_color=colors, name="Return %",
+                ))
+                fig_dist.add_hline(y=0, line_color="#374151", line_dash="dot")
+                fig_dist.update_layout(
+                    paper_bgcolor="#0a0d14", plot_bgcolor="#0a0d14",
+                    font=dict(color="#e5e7eb"),
+                    xaxis_title="Date", yaxis_title="Return %",
+                    height=250, margin=dict(l=10, r=10, t=10, b=10),
+                )
+                fig_dist.update_xaxes(gridcolor="#1f2937")
+                fig_dist.update_yaxes(gridcolor="#1f2937")
+                st.plotly_chart(fig_dist, use_container_width=True)
+
+                # Trade log — plain st.dataframe, no Styler.background_gradient
+                trade_df = pd.DataFrame({
+                    "Trade #": list(range(1, len(result.trade_returns) + 1)),
+                    "Date": result.trade_dates,
+                    "Return %": result.trade_returns,
+                    "Equity": result.equity_curve[1:],
+                })
+                st.dataframe(
+                    trade_df.style.format({
+                        "Return %": "{:+.3f}%",
+                        "Equity": "₹{:,.2f}",
+                    }).map(
+                        lambda v: "color: #34d399;" if isinstance(v, (int, float)) and v > 0
+                        else "color: #f87171;" if isinstance(v, (int, float)) and v <= 0 else "",
+                        subset=["Return %"],
+                    ),
+                    use_container_width=True, hide_index=True,
+                )
+
+                csv = trade_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇ Download Trade Log", data=csv,
+                    file_name=f"backtest_{ticker_sel}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                )
+
+    # ── DISCLAIMER ────────────────────────────
+    st.markdown(
+        '<div class="disclaimer">⚠ Past data is for informational purposes only. '
+        "This is not investment advice. Trade at your own risk.</div>",
+        unsafe_allow_html=True,
+    )
+
+
 if __name__ == "__main__":
     main()
